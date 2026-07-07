@@ -285,20 +285,19 @@ app.layout = dbc.Container(
                     ), width=6),
                 ], className="g-2"),
                 dbc.Row([
-                    dbc.Col(
-                        html.A(
+                    dbc.Col([
+                        dbc.Button(
                             "⬇ Download Trade Slides (PPTX)",
-                            href="/download-pptx",
+                            id="btn-download-pptx", n_clicks=0,
                             style={
                                 "background": WM_DARK, "border": "none",
                                 "fontWeight": "700", "color": "white",
                                 "fontSize": "0.78rem", "width": "100%",
-                                "marginTop": "6px", "display": "block",
-                                "textAlign": "center", "padding": "6px 12px",
-                                "borderRadius": "4px", "textDecoration": "none",
+                                "marginTop": "6px",
                             },
-                        ), width=12,
-                    ),
+                        ),
+                        dcc.Download(id="download-pptx"),
+                    ], width=12),
                 ], className="g-2"),
             ], width=4, className="d-flex align-items-end flex-column"),
         ], className="mb-3"),
@@ -1308,43 +1307,57 @@ def _pptx_replacements(inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
 
 @server.route("/download-pptx")
 def download_trade_slides_route():
-    """Flask route — bypasses Dash callback system for reliable binary downloads."""
+    """Flask route — for local use. On Posit Connect use the dcc.Download callback instead."""
     import traceback
     from flask import Response
     try:
         from pptx import Presentation as _Prs
-
         cur_wk   = _cache["cur_oo_wk"]
         trade_wk = cur_wk % 100 + 1
         filename = f"Trade Slides - Inventory WK{trade_wk}.pptx"
-
         pptx_path, pptx_bytes = _find_pptx_template()
         if not pptx_path:
-            print("[PPTX] Template not found — save pptx_template.pptx in project folder", flush=True)
-            return Response("Template file not found. Save pptx_template.pptx in the project folder.", status=404)
-
-        print(f"[PPTX] Template: {os.path.basename(pptx_path)} ({len(pptx_bytes):,} bytes)", flush=True)
+            return Response("Template not found. Save pptx_template.pptx in project folder.", status=404)
         prs = _Prs(io.BytesIO(pptx_bytes))
-
-        inv = _cache["inv"].copy()
-        oo  = _cache["oo"].copy()
-        prs = _update_slide1(prs, inv, oo, cur_wk)
-
-        buf = io.BytesIO()
-        prs.save(buf)
-        buf.seek(0)
-        data = buf.read()
-        print(f"[PPTX] Serving {filename} ({len(data):,} bytes)", flush=True)
-
-        return Response(
-            data,
+        prs = _update_slide1(prs, _cache["inv"].copy(), _cache["oo"].copy(), cur_wk)
+        buf = io.BytesIO(); prs.save(buf); buf.seek(0); data = buf.read()
+        print(f"[PPTX] Flask route serving {filename} ({len(data):,} bytes)", flush=True)
+        return Response(data,
             mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     except Exception:
         err = traceback.format_exc()
-        print(f"[PPTX] EXCEPTION:\n{err}", flush=True)
-        return Response(f"Error generating PPTX:\n{err}", status=500, mimetype="text/plain")
+        print(f"[PPTX] Flask route error:\n{err}", flush=True)
+        return Response(f"Error: {err}", status=500, mimetype="text/plain")
+
+
+@app.callback(
+    Output("download-pptx", "data"),
+    Input("btn-download-pptx", "n_clicks"),
+    prevent_initial_call=True,
+)
+def download_trade_slides_cb(n):
+    """Dash callback — works on both local and Posit Connect (uses Dash routing)."""
+    import traceback
+    if not n:
+        return dash.no_update
+    try:
+        from pptx import Presentation as _Prs
+        cur_wk   = _cache["cur_oo_wk"]
+        trade_wk = cur_wk % 100 + 1
+        filename = f"Trade Slides - Inventory WK{trade_wk}.pptx"
+        pptx_path, pptx_bytes = _find_pptx_template()
+        if not pptx_path:
+            print("[PPTX] No template found — returning no_update", flush=True)
+            return dash.no_update
+        prs = _Prs(io.BytesIO(pptx_bytes))
+        prs = _update_slide1(prs, _cache["inv"].copy(), _cache["oo"].copy(), cur_wk)
+        buf = io.BytesIO(); prs.save(buf); buf.seek(0); data = buf.read()
+        print(f"[PPTX] Callback serving {filename} ({len(data):,} bytes)", flush=True)
+        return dcc.send_bytes(data, filename)
+    except Exception:
+        print(f"[PPTX] Callback error:\n{traceback.format_exc()}", flush=True)
+        return dash.no_update
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
