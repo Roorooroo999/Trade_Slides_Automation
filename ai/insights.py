@@ -28,7 +28,13 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _GCP_SCOPES    = ["https://www.googleapis.com/auth/cloud-platform"]
-_HTTPS_PROXY   = os.environ.get("HTTPS_PROXY", "http://sysproxy.wal-mart.com:8080")
+# Use proxy only if explicitly set — on Posit Connect, use direct connection
+_HTTPS_PROXY   = (
+    os.environ.get("HTTPS_PROXY") or
+    os.environ.get("https_proxy") or
+    os.environ.get("HTTP_PROXY") or
+    "http://proxy-intlho.wal-mart.com:8080"   # Posit Connect default
+)
 _VERTEX_PROJECT= "wmt-execution-intel-prod"
 
 # SA key — look in project root first (works local + Posit), then GOOGLE_APPLICATION_CREDENTIALS env
@@ -67,18 +73,26 @@ def _make_opener(ssl_ctx: ssl.SSLContext) -> urllib.request.OpenerDirector:
 
 
 def _get_access_token() -> str:
-    """Get a fresh OAuth2 bearer token via requests + Walmart proxy."""
-    import requests
+    """Get a fresh OAuth2 bearer token — tries direct first, proxy as fallback."""
+    import requests, urllib3
+    urllib3.disable_warnings()
     creds = service_account.Credentials.from_service_account_file(
         _GCP_KEY_PATH, scopes=_GCP_SCOPES
     )
-    session = requests.Session()
-    session.proxies = {"https": _HTTPS_PROXY, "http": _HTTPS_PROXY}
-    session.verify  = False          # Walmart corp SSL intercept
-    import urllib3; urllib3.disable_warnings()
-    auth_req = GoogleAuthRequest(session)
-    creds.refresh(auth_req)
-    return creds.token
+    # Try direct connection first (works on Posit Connect)
+    for proxy_cfg in [None, {"https": _HTTPS_PROXY, "http": _HTTPS_PROXY}]:
+        try:
+            session = requests.Session()
+            if proxy_cfg:
+                session.proxies = proxy_cfg
+            session.verify = False
+            auth_req = GoogleAuthRequest(session)
+            creds.refresh(auth_req)
+            print(f"  [AI] Token obtained (proxy={'yes' if proxy_cfg else 'no'})")
+            return creds.token
+        except Exception as e:
+            print(f"  [AI] Token attempt failed (proxy={'yes' if proxy_cfg else 'no'}): {e}")
+    raise Exception("Could not obtain GCP access token via any method")
 
 
 def _call_vertex(system_prompt: str, user_message: str) -> str:
@@ -98,8 +112,12 @@ def _call_vertex(system_prompt: str, user_message: str) -> str:
     }
     payload = json.dumps(body).encode("utf-8")
 
-    ssl_ctx = _make_ssl_ctx()
-    opener  = _make_opener(ssl_ctx)
+    ssl_ctx  = _make_ssl_ctx()
+    # Try two openers: direct (no proxy) then via proxy
+    openers = [
+        ("direct", urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_ctx))),
+        ("proxy",  _make_opener(ssl_ctx)),
+    ]
     last_error = None
 
     for model, location in _VERTEX_COMBOS:
@@ -111,40 +129,38 @@ def _call_vertex(system_prompt: str, user_message: str) -> str:
         req = urllib.request.Request(endpoint, data=payload, method="POST")
         req.add_header("Content-Type",  "application/json")
         req.add_header("Authorization", f"Bearer {token}")
-        print(f"  [Vertex] Trying {model} @ {location}...")
 
-        try:
-            with opener.open(req, timeout=120) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-            print(f"  [Vertex] Success: {model} @ {location}")
-            return result["candidates"][0]["content"]["parts"][0]["text"]
+        for opener_name, opener in openers:
+            print(f"  [Vertex] Trying {model} @ {location} via {opener_name}...")
+            try:
+                with opener.open(req, timeout=60) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                print(f"  [Vertex] Success: {model} @ {location} via {opener_name}")
+                return result["candidates"][0]["content"]["parts"][0]["text"]
 
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            if e.code in (404, 403):
-                print(f"  [Vertex] {e.code} on {model} @ {location} — trying next...")
-                last_error = f"{e.code}: {err_body[:200]}"
-                continue
-            raise Exception(f"Vertex AI HTTP {e.code}: {err_body[:500]}")
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                print(f"  [Vertex] HTTP {e.code} on {model} @ {location} ({opener_name})")
+                last_error = f"{e.code}: {err_body[:300]}"
+                if e.code == 401:
+                    # Token expired — get a new one
+                    token = _get_access_token()
+                    req.add_header("Authorization", f"Bearer {token}")
+                continue  # try next opener
 
-        except urllib.error.URLError as e:
-            if "CERTIFICATE" in str(e).upper() or "SSL" in str(e).upper():
-                # Retry without SSL verification (corp proxy intercept)
-                print("  [Vertex] SSL verify failed — retrying without verification...")
+            except urllib.error.URLError as e:
+                # SSL intercept — retry without verification
                 ctx_nv = ssl.create_default_context()
                 ctx_nv.check_hostname = False
                 ctx_nv.verify_mode    = ssl.CERT_NONE
-                opener2 = _make_opener(ctx_nv)
+                opener_nv = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx_nv))
                 try:
-                    with opener2.open(req, timeout=120) as resp:
+                    with opener_nv.open(req, timeout=60) as resp:
                         result = json.loads(resp.read().decode("utf-8"))
                     return result["candidates"][0]["content"]["parts"][0]["text"]
                 except Exception as e2:
                     last_error = str(e2)
-                    continue
-            last_error = str(e)
-            print(f"  [Vertex] URLError on {model} @ {location}: {last_error}")
-            continue
+                continue
 
     raise Exception(f"All Vertex AI model/location combos failed. Last: {last_error}")
 
@@ -292,25 +308,22 @@ def generate_weekly_insights(
         f"```\n{data_block}\n```"
     )
 
-    # ── Try Google AI Studio key first (fastest, no corp infrastructure needed) ──
-    google_api_key = os.getenv("GOOGLE_API_KEY", "")
+    # ── Try Google AI Studio (google-generativeai SDK) ───────────────────────
+    google_api_key = os.getenv("GOOGLE_API_KEY", "").strip()
     if google_api_key:
         try:
-            from google import genai
-            from google.genai import types
+            import google.generativeai as genai
             import warnings
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                client = genai.Client(api_key=google_api_key)
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=user_msg,
-                    config=types.GenerateContentConfig(
-                        system_instruction=_SYSTEM_PROMPT,
-                        max_output_tokens=700,
-                        temperature=0.3,
-                    ),
+                genai.configure(api_key=google_api_key)
+                model = genai.GenerativeModel(
+                    model_name="gemini-2.0-flash",
+                    system_instruction=_SYSTEM_PROMPT,
+                    generation_config={"temperature": 0.3, "max_output_tokens": 700},
                 )
+                response = model.generate_content(user_msg)
+            print("  [AI] Google AI Studio success")
             return response.text
         except Exception as exc:
             print(f"  [AI] Google AI Studio failed: {exc}")
@@ -321,22 +334,17 @@ def generate_weekly_insights(
             return _call_vertex(_SYSTEM_PROMPT, user_msg)
         except Exception as exc:
             vertex_err = str(exc)
-            print(f"  [AI] Vertex AI failed: {vertex_err[:100]}")
+            print(f"  [AI] Vertex AI failed: {vertex_err[:200]}")
     else:
         vertex_err = f"GCP key not found: {_GCP_KEY_PATH}"
 
     # ── No working AI path ────────────────────────────────────────────────────
     return (
         "[AI INSIGHTS NOT CONFIGURED]\n\n"
-        "To enable the Generate Insights button, choose one option:\n\n"
-        "OPTION A — Free Gemini API (fastest, 2 min):\n"
-        "  1. Go to https://aistudio.google.com  → Get API Key\n"
-        "  2. Add to .env file:\n"
-        "       GOOGLE_API_KEY=AIzaSy...\n"
-        "  3. Restart the dashboard\n\n"
-        "OPTION B — Vertex AI (ask GCP admin):\n"
-        "  Run: gcloud services enable aiplatform.googleapis.com \\\n"
-        f"         --project={_VERTEX_PROJECT}\n"
-        "  Then ensure SA has 'Vertex AI User' role\n\n"
-        f"Last error: {vertex_err[:200]}"
+        "To enable insights, get a free Gemini API key:\n"
+        "  1. Go to https://aistudio.google.com → Get API Key\n"
+        "  2. Add to Posit Connect app settings → Environment Variables:\n"
+        "       GOOGLE_API_KEY = AIzaSy...\n"
+        "  3. Redeploy or restart the app\n\n"
+        f"Last error: {vertex_err[:300]}"
     )
