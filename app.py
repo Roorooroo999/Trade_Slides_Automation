@@ -819,30 +819,45 @@ def update_cards(sbu, dept, _data):
 def update_table(node, sbu, dept):
     inv, oo = _get_frames(sbu, dept)
 
+    # Each entry: (ty_col, pw_col, ly_col, cube_ty_col, cube_ly_col)
+    # All raw unit columns — percentages computed after groupby sum (correct weighted avg)
     _COLS = {
-        "store":    ("store_oh_units",    "wow_store_pct",    "yoy_store_pct",    "store_oh_cube",  "yoy_store_cube_pct"),
-        "on_order": ("units_ordered",     "wow_units_pct",    "yoy_units_pct",    "cube_ordered",   "yoy_cube_pct"),
-        "in_dc":    ("in_dc_units",       "wow_dc_pct",       "yoy_dc_pct",       "in_dc_cube",     "yoy_dc_cube_pct"),
-        "it_total": ("it_total_units",    "wow_it_total_pct", "yoy_it_total_pct", "it_total_cube",  None),
-        "it_dc":    ("it_dc_units",       "wow_it_dc_pct",    "yoy_it_dc_pct",    "it_dc_cube",     "yoy_it_dc_cube_pct"),
-        "it_store": ("it_store_units",    "wow_it_store_pct", "yoy_it_store_pct", "it_store_cube",  "yoy_it_store_cube_pct"),
-        "backroom": ("backroom_units",    "wow_backroom_pct", "yoy_backroom_pct", "backroom_cube",  None),
-        "fc":       ("fc_oh_units",       "wow_fc_pct",       "yoy_fc_pct",       "fc_oh_cube",     "yoy_fc_cube_pct"),
-        "yard":     ("on_yard_units",     "wow_yard_pct",     "yoy_yard_pct",     "on_yard_cube",   "yoy_yard_cube_pct"),
-        "total":    ("total_network_units","wow_total_pct",   "yoy_total_pct",    None,             None),
+        "store":    ("store_oh_units",     "pw_store",         "ly_store",         "store_oh_cube",  "ly_store_cube"),
+        "on_order": ("units_ordered",      "pw_units_ordered", "ly_units_ordered", "cube_ordered",   "ly_cube_ordered"),
+        "in_dc":    ("in_dc_units",        "pw_dc",            "ly_dc",            "in_dc_cube",     "ly_dc_cube"),
+        "it_total": ("it_total_units",     "it_total_pw",      "it_total_ly",      "it_total_cube",  None),
+        "it_dc":    ("it_dc_units",        "pw_it_dc",         "ly_it_dc",         "it_dc_cube",     "ly_it_dc_cube"),
+        "it_store": ("it_store_units",     "pw_it_store",      "ly_it_store",      "it_store_cube",  "ly_it_store_cube"),
+        "backroom": ("backroom_units",     "pw_backroom",      "ly_backroom",      "backroom_cube",  "ly_backroom_cube"),
+        "fc":       ("fc_oh_units",        "pw_fc",            "ly_fc",            "fc_oh_cube",     "ly_fc_cube"),
+        "yard":     ("on_yard_units",      "pw_yard",          "ly_yard",          "on_yard_cube",   "ly_yard_cube"),
+        "total":    ("total_network_units","pw_total",         "ly_total",         None,             None),
     }
-    uc, wc, yc, cc, cyc = _COLS.get(node, _COLS["store"])
+    uc, pwc, lyc, cc, lycc = _COLS.get(node, _COLS["store"])
     src = oo if node == "on_order" else inv
+
+    # IT Total: derive combined prior/LY columns from components
+    if node == "it_total":
+        src = src.copy()
+        src["it_total_pw"] = src.get("pw_it_dc",    pd.Series(0.0, index=src.index)).fillna(0) + \
+                             src.get("pw_it_store",  pd.Series(0.0, index=src.index)).fillna(0)
+        src["it_total_ly"] = src.get("ly_it_dc",    pd.Series(0.0, index=src.index)).fillna(0) + \
+                             src.get("ly_it_store",  pd.Series(0.0, index=src.index)).fillna(0)
 
     if uc not in src.columns:
         return html.P("No data for selected node.", style={"color": "#999", "fontStyle": "italic"})
 
-    agg_map = {c: ("mean" if c and c.endswith("_pct") else "sum")
-               for c in [uc, wc, yc, cc, cyc] if c and c in src.columns}
-    grp = src.groupby(["sbu", "OMNI_DEPT_DESC"]).agg(agg_map).reset_index()
+    # Aggregate only raw unit columns — sum is correct for weighted totals
+    sum_cols = [c for c in [uc, pwc, lyc, cc, lycc] if c and c in src.columns]
+    grp = src.groupby(["sbu", "OMNI_DEPT_DESC"])[sum_cols].sum().reset_index()
+
+    def _pct_safe(ty, prior):
+        """(TY - prior) / prior — returns None when no prior data."""
+        if prior is None or prior == 0 or pd.isna(prior): return None
+        return (ty - prior) / prior
 
     def _pc(v):
-        if v is None or (isinstance(v, float) and pd.isna(v)): return html.Td("—")
+        if v is None or (isinstance(v, float) and pd.isna(v)): return html.Td("—", style={"textAlign": "right", "color": "#bbb"})
         c = WM_GREEN if v >= 0 else WM_RED
         s = "+" if v >= 0 else ""
         return html.Td(f"{s}{v*100:.1f}%", style={"color": c, "fontWeight": "600", "textAlign": "right"})
@@ -862,39 +877,39 @@ def update_table(node, sbu, dept):
         s = r["sbu"]
         if s != prev_sbu:
             sdf = grp[grp["sbu"] == s]
-            su  = float(sdf[uc].sum()) if uc in sdf else 0
-            sw  = float(sdf[wc].mean()) if wc and wc in sdf.columns else None
-            sy  = float(sdf[yc].mean()) if yc and yc in sdf.columns else None
-            sc  = float(sdf[cc].sum())  if cc and cc in sdf.columns else None
+            su  = float(sdf[uc].sum())
+            spw = float(sdf[pwc].sum())  if pwc  and pwc  in sdf.columns else 0
+            sly = float(sdf[lyc].sum())  if lyc  and lyc  in sdf.columns else 0
+            sc  = float(sdf[cc].sum())   if cc   and cc   in sdf.columns else None
+            scly= float(sdf[lycc].sum()) if lycc and lycc in sdf.columns else None
             row_cells = [
                 html.Td(s, colSpan=2, style={**TD, "fontWeight": "800", "background": "#eef4ff"}),
                 html.Td(_fmt(su), style={**TD, "fontWeight": "800", "background": "#eef4ff", "textAlign": "right"}),
-                _pc(sw), _pc(sy),
+                _pc(_pct_safe(su, spw)), _pc(_pct_safe(su, sly)),
             ]
             if cc:
-                scy = float(sdf[cyc].mean()) if cyc and cyc in sdf.columns else None
                 row_cells += [
                     html.Td(_fmt(sc) if sc else "—", style={**TD, "background": "#eef4ff", "textAlign": "right"}),
-                    _pc(scy),
+                    _pc(_pct_safe(sc, scly)),
                 ]
             rows.append(html.Tr(row_cells))
             prev_sbu = s
 
-        uv = float(r[uc]) if uc in r else 0
-        wv = float(r[wc]) if wc and wc in r else None
-        yv = float(r[yc]) if yc and yc in r else None
+        uv  = float(r[uc])
+        pwv = float(r[pwc])  if pwc  and pwc  in r else 0
+        lyv = float(r[lyc])  if lyc  and lyc  in r else 0
         cells = [
             html.Td("", style={**TD}),
             html.Td(r["OMNI_DEPT_DESC"], style={**TD, "paddingLeft": "18px", "color": "#555"}),
             html.Td(_fmt(uv), style={**TD, "textAlign": "right", "fontWeight": "500"}),
-            _pc(wv), _pc(yv),
+            _pc(_pct_safe(uv, pwv)), _pc(_pct_safe(uv, lyv)),
         ]
         if cc:
-            cv  = float(r[cc])  if cc  and cc  in r and not pd.isna(r[cc])  else None
-            cyv = float(r[cyc]) if cyc and cyc in r and not pd.isna(r[cyc]) else None
+            cv  = float(r[cc])   if cc   and cc   in r and not pd.isna(r[cc])   else None
+            clyv= float(r[lycc]) if lycc and lycc in r and not pd.isna(r[lycc]) else None
             cells += [
                 html.Td(_fmt(cv) if cv else "—", style={**TD, "textAlign": "right"}),
-                _pc(cyv),
+                _pc(_pct_safe(cv, clyv)),
             ]
         rows.append(html.Tr(cells))
 
