@@ -20,7 +20,15 @@ if errorlevel 1 (
 )
 echo.
 
-echo  Step 2: Updating Trade Slides PPTX with latest numbers + insights...
+echo  Step 2: Capturing Build/Burn chart from BQ data...
+echo.
+%PYTHON% capture_buildburn.py
+if errorlevel 1 (
+    echo  [WARN] Build/Burn chart capture failed — PPTX slide 2 will use existing chart.
+)
+echo.
+
+echo  Step 3: Updating Trade Slides PPTX with latest numbers + insights...
 echo.
 %PYTHON% update_pptx.py
 if errorlevel 1 (

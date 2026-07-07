@@ -1223,6 +1223,49 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
     return prs
 
 
+def _update_slide2_chart(prs):
+    """Replace Build/Burn chart image on slide 2 with a freshly generated PNG.
+    Generates buildburn_chart.png from BQ data via Chrome headless,
+    then swaps the existing Picture 7 shape in place."""
+    chart_png = os.path.join(_BASE_DIR, "buildburn_chart.png")
+
+    # Generate fresh chart (runs capture_buildburn.py logic inline)
+    try:
+        sys.path.insert(0, _BASE_DIR)
+        import capture_buildburn
+        ok = capture_buildburn.capture(out_png=chart_png)
+        if not ok:
+            print("[PPTX] Build/Burn chart capture failed — skipping slide 2 update")
+            return prs
+    except Exception as e:
+        print(f"[PPTX] Build/Burn chart error: {e} — skipping slide 2 update")
+        return prs
+
+    if not os.path.exists(chart_png):
+        print("[PPTX] buildburn_chart.png not found — skipping slide 2 update")
+        return prs
+
+    try:
+        slide2 = prs.slides[1]
+        # Find and replace Picture 7
+        for shape in list(slide2.shapes):
+            if shape.name == "Picture 7":
+                left, top, w, h = shape.left, shape.top, shape.width, shape.height
+                shape._element.getparent().remove(shape._element)
+                slide2.shapes.add_picture(chart_png, left, top, w, h)
+                print(f"[PPTX] Slide 2 Build/Burn chart updated ({os.path.getsize(chart_png):,} bytes)")
+                break
+        else:
+            # No Picture 7 found — add chart in default chart area position
+            from pptx.util import Inches
+            slide2.shapes.add_picture(chart_png, Inches(0), Inches(2), Inches(11), Inches(4))
+            print("[PPTX] Slide 2: added new Build/Burn chart (Picture 7 not found)")
+    except Exception as e:
+        print(f"[PPTX] Slide 2 chart insert error: {e}")
+
+    return prs
+
+
 def _pptx_replacements(inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
     """Build the same REPLACEMENTS dict as update_pptx.py using cached DataFrames."""
     def _n(col): return float(inv[col].sum()) if col in inv.columns else 0.0
@@ -1352,6 +1395,7 @@ def download_trade_slides_cb(n):
             return dash.no_update
         prs = _Prs(io.BytesIO(pptx_bytes))
         prs = _update_slide1(prs, _cache["inv"].copy(), _cache["oo"].copy(), cur_wk)
+        prs = _update_slide2_chart(prs)   # Build/Burn chart on slide 2
         buf = io.BytesIO(); prs.save(buf); buf.seek(0); data = buf.read()
         print(f"[PPTX] Callback serving {filename} ({len(data):,} bytes)", flush=True)
         return dcc.send_bytes(data, filename)
