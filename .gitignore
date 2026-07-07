@@ -1,0 +1,38 @@
+# Secrets & credentials
+.env
+*.json
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Logs
+*.log
+nul
+
+# Generated output files (regenerated weekly)
+talk_track_WK*.pdf
+talk_track_wk*.pdf
+trade_inventory_talk_track_*.pdf
+Trade_Slides_WK*.pdf
+Trade Slides - Inventory WK*.pptx
+Trade Slides - Inventory WK*_updated.pptx
+
+# Template (binary, user-specific — rename to pptx_template.pptx locally)
+pptx_template.pptx.pptx
+pptx_template.pptx
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Wibey local config
+.wibey/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,10 @@
+shiny>=0.10.0
+shinywidgets>=0.3.0
+plotly>=5.20.0
+pandas>=2.0.0
+anthropic>=0.30.0
+python-dotenv>=1.0.0
+# BigQuery
+google-cloud-bigquery>=3.11.0
+google-auth>=2.22.0
+db-dtypes>=1.1.1
