@@ -31,14 +31,16 @@ _GCP_SCOPES    = ["https://www.googleapis.com/auth/cloud-platform"]
 _HTTPS_PROXY   = os.environ.get("HTTPS_PROXY", "http://sysproxy.wal-mart.com:8080")
 _VERTEX_PROJECT= "wmt-execution-intel-prod"
 
-# SA key — use same key as the working OTB agent
-_GCP_KEY_PATH  = os.path.join(
-    os.path.expanduser("~"),
-    "OneDrive - Walmart Inc",
-    "Project", "FY27 Goal", "OTB Questions with Agent", "GCP_KEY.json",
+# SA key — look in project root first (works local + Posit), then GOOGLE_APPLICATION_CREDENTIALS env
+_PROJECT_ROOT  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_GCP_KEY_PATH  = (
+    os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and
+       os.path.isabs(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""))
+    else os.path.join(_PROJECT_ROOT, os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "gcp_key.json"))
 )
 
-# Model fallback list (mirrors server_otb.py)
+# Model fallback list
 _VERTEX_COMBOS = [
     ("gemini-2.0-flash-001", "us-central1"),
     ("gemini-2.0-flash-001", "us-east4"),
@@ -46,8 +48,8 @@ _VERTEX_COMBOS = [
     ("gemini-1.5-flash-002", "us-east4"),
 ]
 
-# CA bundle (optional — same location as server_otb.py)
-_CA_BUNDLE = os.path.join(os.path.dirname(_GCP_KEY_PATH), "ca-bundle.crt")
+# CA bundle (optional)
+_CA_BUNDLE = os.path.join(_PROJECT_ROOT, "ca-bundle.crt")
 
 
 def _make_ssl_ctx() -> ssl.SSLContext:
