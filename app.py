@@ -41,12 +41,12 @@ WM_RED    = "#dc2626"
 WM_GREY   = "#f5f5f5"
 
 # ── Data refresh schedule (Wed=2 … Sat=5 in weekday(), Mon=0) ─────────────────
-# Data is available Wed through Sat (mid-week refresh Tue evening → visible Wed)
-_REFRESH_DAYS = {2, 3, 4, 5}          # Wed, Thu, Fri, Sat
+# Data now available daily (scheduled query runs daily Mon-Fri)
+_REFRESH_DAYS = {0, 1, 2, 3, 4}       # Mon, Tue, Wed, Thu, Fri
 _REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000   # check every 4 hours
 
 def _should_refresh() -> bool:
-    """True on Wed–Sat (days when new BQ data lands)."""
+    """True Mon-Fri — new pipeline runs daily."""
     return date.today().weekday() in _REFRESH_DAYS
 
 # ── Initial data load ─────────────────────────────────────────────────────────
