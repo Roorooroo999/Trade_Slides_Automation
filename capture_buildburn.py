@@ -176,53 +176,66 @@ def _build_html(ty, ly):
         "height": 600,
     }
 
-    fig_json = json.dumps({"data": data, "layout": layout})
+    return {"data": data, "layout": layout}
 
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-</head>
+
+def _export_png_kaleido(fig_dict, out_png):
+    """Export Plotly figure to PNG using kaleido — works on Linux (Posit Connect)."""
+    import plotly.graph_objects as go
+    fig = go.Figure(fig_dict)
+    fig.write_image(out_png, width=WIN_W, height=WIN_H, scale=1.5)
+    if os.path.exists(out_png) and os.path.getsize(out_png) > 5000:
+        print(f"[Chart] kaleido PNG saved: {out_png} ({os.path.getsize(out_png):,} bytes)")
+        return True
+    return False
+
+
+def _export_png_chrome(fig_dict, out_png):
+    """Export via Chrome headless — works on Windows."""
+    html_str = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script></head>
 <body style="margin:0;background:white">
-<div id="chart" style="width:{WIN_W}px;height:650px"></div>
+<div id="chart" style="width:{WIN_W}px;height:{WIN_H}px"></div>
 <script>
-var fig = {fig_json};
-Plotly.newPlot('chart', fig.data, fig.layout, {{displayModeBar: false, staticPlot: true}});
-</script>
-</body>
-</html>"""
-    return html
+Plotly.newPlot('chart', {json.dumps(fig_dict['data'])}, {json.dumps(fig_dict['layout'])},
+  {{displayModeBar:false,staticPlot:true}});
+</script></body></html>"""
 
-
-def _screenshot_html(html_str, out_png):
-    """Write HTML to temp file, Chrome headless screenshot → out_png."""
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as f:
-        f.write(html_str)
-        tmp = f.name
+        f.write(html_str); tmp = f.name
 
     url = f"file:///{tmp.replace(os.sep, '/')}"
-    cmd = [
-        CHROME,
-        "--headless=new",
-        "--disable-gpu",
-        "--no-sandbox",
-        f"--screenshot={out_png}",
-        f"--window-size={WIN_W},{WIN_H}",
-        "--run-all-compositor-stages-before-draw",
-        "--virtual-time-budget=5000",   # wait 5s for JS to render
-        url,
-    ]
+    cmd = [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
+           f"--screenshot={out_png}", f"--window-size={WIN_W},{WIN_H}",
+           "--run-all-compositor-stages-before-draw", "--virtual-time-budget=5000", url]
     print(f"[Chart] Running Chrome headless...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     os.unlink(tmp)
 
     if os.path.exists(out_png) and os.path.getsize(out_png) > 5000:
-        print(f"[Chart] Screenshot saved: {out_png} ({os.path.getsize(out_png):,} bytes)")
+        print(f"[Chart] Chrome PNG saved: {out_png} ({os.path.getsize(out_png):,} bytes)")
         return True
+    print("[Chart] Chrome screenshot failed")
+    return False
+
+
+def _render_png(fig_dict, out_png):
+    """Auto-detect best renderer: kaleido on Linux, Chrome on Windows."""
+    import sys
+    if sys.platform != "win32":
+        # Posit Connect / Linux — use kaleido
+        try:
+            return _export_png_kaleido(fig_dict, out_png)
+        except Exception as e:
+            print(f"[Chart] kaleido failed: {e}")
+            return False
     else:
-        print(f"[Chart] Screenshot failed. stderr: {result.stderr[:200]}")
-        return False
+        # Windows — try kaleido first, fall back to Chrome
+        try:
+            return _export_png_kaleido(fig_dict, out_png)
+        except Exception:
+            return _export_png_chrome(fig_dict, out_png)
 
 
 def capture(out_png=OUT_PNG):
@@ -235,8 +248,8 @@ def capture(out_png=OUT_PNG):
         return False
 
     print(f"[Chart] Got {len(ty)} TY weeks, {len(ly) if ly is not None else 0} LY weeks")
-    html = _build_html(ty, ly)
-    return _screenshot_html(html, out_png)
+    fig_dict = _build_html(ty, ly)
+    return _render_png(fig_dict, out_png)
 
 
 if __name__ == "__main__":
