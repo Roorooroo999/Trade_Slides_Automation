@@ -604,6 +604,22 @@ def auto_refresh(n):
         _cache["last_loaded"] = datetime.now(timezone.utc)
         print(f"[Refresh] Done. OO wk={_cache['cur_oo_wk']}, INV wk={_cache['cur_inv_wk']}")
 
+        # ── Auto-regenerate Build/Burn chart PNG alongside BQ refresh ─────────
+        # Runs in a background thread so it doesn't block the dashboard response
+        import threading
+        def _regen_chart():
+            try:
+                import capture_buildburn
+                chart_png = os.path.join(_BASE_DIR, "buildburn_chart.png")
+                ok = capture_buildburn.capture(out_png=chart_png)
+                if ok:
+                    print(f"[Refresh] Build/Burn chart auto-updated ({os.path.getsize(chart_png):,} bytes)", flush=True)
+                else:
+                    print("[Refresh] Build/Burn chart auto-update failed (non-blocking)", flush=True)
+            except Exception as e:
+                print(f"[Refresh] Build/Burn chart error (non-blocking): {e}", flush=True)
+        threading.Thread(target=_regen_chart, daemon=True).start()
+
     return {"loaded": str(_cache["last_loaded"])}
 
 
