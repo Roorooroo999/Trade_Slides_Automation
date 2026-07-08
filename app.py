@@ -589,7 +589,27 @@ def auto_refresh(n):
     if not _should_refresh():
         return dash.no_update
 
-    print(f"[Refresh] Auto-refreshing BQ data (interval #{n})...")
+    # ── Smart refresh: check if BQ data actually changed before reloading ────
+    # Runs a cheap MAX(BUS_DT) query — avoids reloading 1500+ rows when
+    # the scheduled query hasn't landed yet.
+    try:
+        from data.bq import _run_query
+        chk = _run_query(
+            "SELECT MAX(BUS_DT) latest FROM "
+            "`wmt-execution-intel-prod.WM_AD_HOC.R0C0JUG_WMUS_HIST_COMBINED`"
+        )
+        if not chk.empty:
+            latest_bus_dt = str(chk["latest"].iloc[0])
+            last_seen     = _cache.get("last_bus_dt", "")
+            if latest_bus_dt == last_seen:
+                print(f"[Refresh] BQ unchanged (BUS_DT={latest_bus_dt}) — skipping reload")
+                return dash.no_update
+            print(f"[Refresh] New BQ data detected: {last_seen} → {latest_bus_dt}")
+            _cache["last_bus_dt"] = latest_bus_dt
+    except Exception as e:
+        print(f"[Refresh] BUS_DT check failed ({e}) — proceeding with full reload")
+
+    print(f"[Refresh] Loading fresh BQ snapshot (interval #{n})...")
     new_inv = fetch_inv_snapshot()
     new_oo  = fetch_oo_snapshot()
 
