@@ -1260,22 +1260,32 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
 
 
 def _update_slide2_chart(prs):
-    """Replace Build/Burn chart image on slide 2 with a freshly generated PNG.
-    Generates buildburn_chart.png from BQ data via Chrome headless,
-    then swaps the existing Picture 7 shape in place."""
+    """Replace Build/Burn chart image on slide 2.
+    Uses pre-baked buildburn_chart.png if fresh (< 2 hours old),
+    otherwise regenerates from BQ. Pre-baking happens on every BQ refresh."""
+    import time
     chart_png = os.path.join(_BASE_DIR, "buildburn_chart.png")
 
-    # Generate fresh chart (runs capture_buildburn.py logic inline)
-    try:
-        sys.path.insert(0, _BASE_DIR)
-        import capture_buildburn
-        ok = capture_buildburn.capture(out_png=chart_png)
-        if not ok:
-            print("[PPTX] Build/Burn chart capture failed — skipping slide 2 update")
+    # Use existing PNG if it's less than 2 hours old (pre-baked by auto-refresh)
+    png_age_hrs = (
+        (time.time() - os.path.getmtime(chart_png)) / 3600
+        if os.path.exists(chart_png) and os.path.getsize(chart_png) > 5000
+        else 999
+    )
+    if png_age_hrs < 2:
+        print(f"[PPTX] Using pre-baked Build/Burn chart ({png_age_hrs:.1f}h old)", flush=True)
+    else:
+        # Stale or missing — regenerate now
+        try:
+            sys.path.insert(0, _BASE_DIR)
+            import capture_buildburn
+            ok = capture_buildburn.capture(out_png=chart_png)
+            if not ok:
+                print("[PPTX] Build/Burn chart capture failed — skipping slide 2 update")
+                return prs
+        except Exception as e:
+            print(f"[PPTX] Build/Burn chart error: {e} — skipping slide 2 update")
             return prs
-    except Exception as e:
-        print(f"[PPTX] Build/Burn chart error: {e} — skipping slide 2 update")
-        return prs
 
     if not os.path.exists(chart_png):
         print("[PPTX] buildburn_chart.png not found — skipping slide 2 update")
@@ -1399,6 +1409,7 @@ def download_trade_slides_route():
             return Response("Template not found. Save pptx_template.pptx in project folder.", status=404)
         prs = _Prs(io.BytesIO(pptx_bytes))
         prs = _update_slide1(prs, _cache["inv"].copy(), _cache["oo"].copy(), cur_wk)
+        prs = _update_slide2_chart(prs)   # Build/Burn chart on slide 2
         buf = io.BytesIO(); prs.save(buf); buf.seek(0); data = buf.read()
         print(f"[PPTX] Flask route serving {filename} ({len(data):,} bytes)", flush=True)
         return Response(data,
