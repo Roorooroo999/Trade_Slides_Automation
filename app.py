@@ -1126,7 +1126,11 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
 
     data_wk  = cur_oo_wk % 100
     trade_wk = data_wk + 1
-    meet_date = (date.today() + timedelta(days=7)).strftime("%B %d, %Y").replace(" 0", " ")
+    # Next Monday — trade meetings are always Monday
+    _today = date.today()
+    _days_ahead = (7 - _today.weekday()) % 7   # days until next Monday
+    if _days_ahead == 0: _days_ahead = 7        # if today IS Monday, go to next Monday
+    meet_date = (_today + timedelta(days=_days_ahead)).strftime("%B %d, %Y").replace(" 0", " ")
 
     def sm(v):  m = round(v/1e6); return f"{m:,} M" if m >= 1000 else f"{m} M"
     def sm0(v): m = round(v/1e6); return f"{m:,}M" if m >= 1000 else f"{m}M"
@@ -1228,10 +1232,13 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
     }
 
     changes = 0
+    # !! Only update slide 1 (index 0) — slide 2 shares shape names (TextBox 19 etc.)
+    # and updating all slides would overwrite slide 2's narrative text with metric values
     for slide_idx, slide in enumerate(prs.slides):
+        if slide_idx > 1: break   # only slides 1 and 2 (slide 2 only for Insights/date)
         for shape in slide.shapes:
-            # Standard metric boxes
-            if shape.name in SHAPE_MAP and shape.has_text_frame:
+            # Standard metric boxes — slide 1 only
+            if slide_idx == 0 and shape.name in SHAPE_MAP and shape.has_text_frame:
                 new_texts = SHAPE_MAP[shape.name]
                 for i, new_text in enumerate(new_texts):
                     if i >= len(shape.text_frame.paragraphs):
@@ -1242,8 +1249,8 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
                         for r in para.runs[1:]: r.text = ""
                         changes += 1
 
-            # Insights bullets (bold headline + regular body in same paragraph)
-            elif shape.name in INSIGHTS_MAP and shape.has_text_frame:
+            # Insights bullets — slide 1 only
+            elif slide_idx == 0 and shape.name in INSIGHTS_MAP and shape.has_text_frame:
                 bullets = INSIGHTS_MAP[shape.name]
                 paras = shape.text_frame.paragraphs
                 para_idx = 0
@@ -1342,7 +1349,11 @@ def _pptx_replacements(inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
     data_wk  = cur_oo_wk % 100
     trade_wk = data_wk + 1
     # Next Sunday/Monday — simple: just format today+7
-    meet_date = (date.today() + timedelta(days=7)).strftime("%B %d, %Y").replace(" 0", " ")
+    # Next Monday — trade meetings are always Monday
+    _today = date.today()
+    _days_ahead = (7 - _today.weekday()) % 7   # days until next Monday
+    if _days_ahead == 0: _days_ahead = 7        # if today IS Monday, go to next Monday
+    meet_date = (_today + timedelta(days=_days_ahead)).strftime("%B %d, %Y").replace(" 0", " ")
 
     def sm(v):
         m = round(v / 1e6); return (f"{m:,} M" if m >= 1000 else f"{m} M")
