@@ -43,7 +43,7 @@ WM_GREY   = "#f5f5f5"
 # ── Data refresh schedule (Wed=2 … Sat=5 in weekday(), Mon=0) ─────────────────
 # Data now available daily (scheduled query runs daily Mon-Fri)
 _REFRESH_DAYS = {0, 1, 2, 3, 4}       # Mon, Tue, Wed, Thu, Fri
-_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000   # check every 4 hours
+_REFRESH_INTERVAL_MS = 30 * 60 * 1000        # check every 30 minutes
 
 def _should_refresh() -> bool:
     """True Mon-Fri — new pipeline runs daily."""
