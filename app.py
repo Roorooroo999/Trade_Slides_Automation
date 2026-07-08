@@ -1064,10 +1064,14 @@ def copy_insights(n, text):
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _find_pptx_template():
-    """Find pptx_template.pptx first; fallback to most recent readable WK*.pptx.
+    """Find template PPTX. Priority:
+      1. pptx_template.pptx          (correctly named — your master template)
+      2. pptx_template.pptx.pptx     (Windows double-extension — auto-fixed on read)
+      3. Most recent Trade Slides WK*.pptx  (generated fallback)
     Returns (path, bytes) or (None, None)."""
     candidates = [
         os.path.join(_BASE_DIR, "pptx_template.pptx"),
+        os.path.join(_BASE_DIR, "pptx_template.pptx.pptx"),   # safety net for double-ext
         *sorted(
             glob.glob(os.path.join(_BASE_DIR, "Trade Slides - Inventory WK*.pptx")),
             key=os.path.getmtime, reverse=True,
