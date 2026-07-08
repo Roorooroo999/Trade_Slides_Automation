@@ -728,7 +728,7 @@ def update_cards(sbu, dept, _data):
 
     # ── Node cards (all pcts from raw sums) ───────────────────────────────
     factory = node_card(
-        1, "🏭", "FACTORY", "All On-Order from Vendor → DC Gate (WK21 MABDs, NON-DSD)",
+        1, "🏭", "FACTORY", f"All On-Order from Vendor → DC Gate (WK{_cache['cur_oo_wk'] % 100} MABDs, NON-DSD)",
         units    = _s(oo, "units_ordered"),
         yoy_pct  = _wpct(oo, "units_ordered",  "ly_units_ordered"),
         yoy_delta= _s(oo, "units_ordered") - _s(oo, "ly_units_ordered"),
@@ -1168,6 +1168,7 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
         "TextBox 98":    [f"Trade Meeting · {meet_date}"],
         "TextBox 2":     [f"Trade Meeting · {meet_date}"],   # slide 2 duplicate
         "TextBox 9":     [banner],
+        "TextBox 17":    [f"All On Order Units from Vendor → DC Receiving Gate (WK{data_wk} MABDs)"],
         # On-Order
         "TextBox 19":    [sm0(oo_ty)],
         "TextBox 20":    [sl(_p(oo_ty, oo_ly)), sw(_p(oo_ty, oo_pw))],
