@@ -1129,21 +1129,25 @@ story.append(sbu_tbl(HDR8,
     up_cols=[3,4,6,7], wow_sep_col=5, col_w=CW8))
 story.append(Spacer(1,8))
 
-# A8 — Backroom with WoW — ALL SBUs including Fashion
-_fashion_br_yoy = pct(br_ty.get('FASHION',0), br_ly.get('FASHION',0))
+# A8 — Backroom with WoW — ALL SBUs including Fashion + Total excl. Fashion row
 story += app_sec("A8 · BACKROOM BY SBU  ·  All SBUs incl. Fashion  ·  All YoY valid (EI updated)")
-story.append(sbu_tbl(HDR8,
-    sbu_rows_wow(br_ty, br_ly, br_pw,
-                 sort_key=lambda s:-br_ty.get(s,0)),
-    up_cols=[3,4,6,7], wow_sep_col=5, col_w=CW8))
-_SMALL_NOTE = ParagraphStyle("sn",fontSize=7,fontName="Helvetica-Oblique",
-    textColor=colors.HexColor("#666"),spaceAfter=3,leftIndent=4)
-story.append(Paragraph(
-    f"* FASHION backroom YoY is {fp(_fashion_br_yoy)} — "
-    f"reflects EI system now fully tracking Fashion backroom (previously excluded from LY baseline). "
-    f"Fashion WoW remains the most reliable week-over-week signal. "
-    f"All other SBU YoY comparisons are on consistent EI methodology.",
-    _SMALL_NOTE))
+
+# Build rows: all SBUs sorted by TY desc, then append Total excl. Fashion
+_br_rows = sbu_rows_wow(br_ty, br_ly, br_pw, sort_key=lambda s:-br_ty.get(s,0))
+
+# Total excl. Fashion — separates structural build from EI tracking effect
+_br_ex_f_ty = sum(v for k,v in br_ty.items() if k not in ('FASHION','OTHER'))
+_br_ex_f_ly = sum(v for k,v in br_ly.items() if k not in ('FASHION','OTHER'))
+_br_ex_f_pw = sum(v for k,v in br_pw.items() if k not in ('FASHION','OTHER'))
+_br_rows.append([
+    "TOTAL (excl. Fashion)",
+    fm(_br_ex_f_ty), fm(_br_ex_f_ly),
+    fm(dlt(_br_ex_f_ty, _br_ex_f_ly)), fp(pct(_br_ex_f_ty, _br_ex_f_ly)),
+    fm(_br_ex_f_pw),
+    fm(dlt(_br_ex_f_ty, _br_ex_f_pw)), fp(pct(_br_ex_f_ty, _br_ex_f_pw)),
+])
+
+story.append(sbu_tbl(HDR8, _br_rows, up_cols=[3,4,6,7], wow_sep_col=5, col_w=CW8))
 
 # Appendix footer
 story.append(Spacer(1,6))
