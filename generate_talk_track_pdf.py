@@ -595,38 +595,61 @@ def _sbu_sub(sbu_name, ty_sbu, ly_sbu, pw_sbu,
     sbu_wow_raw = pct(ty_sbu.get(sbu_name,0), pw_sbu.get(sbu_name,0))
     header = f"<b>{sbu_name} {fp(sbu_yoy_raw)} YoY, {fp(sbu_wow_raw)} WoW</b>"
 
-    # Direction-aware YoY dept callout — with top categories per dept
-    def _fmt_with_catg(items):
-        parts = []
-        for x in items:
-            dept_name = x[0]; dept_pct = x[4]
-            # Get top 2 categories within this dept/SBU
+    # Dept callout with BOTH YoY and WoW + top categories
+    def _fmt_dept_full(dept_name, yoy_p, show_catg=True):
+        """Format: DEPT +X% YoY / +Y% WoW  (CAT1 +Z%  CAT2 +W%)"""
+        # WoW for this dept from dept_ty / dept_pw globals
+        d_ty  = dept_ty.get((sbu_name, dept_name), {}).get('store', 0)
+        d_pw  = dept_pw.get((sbu_name, dept_name), {}).get('store', 0)
+        wow_p = pct(d_ty, d_pw) if d_pw else 0
+        wow_part = f" / {fp(wow_p)} WoW" if abs(wow_p) > 0.5 else ""
+        # Categories
+        catg_str = ""
+        if show_catg:
             cg, cd = _top_catg_in_dept(DC_CATG_TY, DC_CATG_LY, sbu_name, dept_name,
                                         n_g=2, n_d=2, min_u=80_000, thr=4.0)
             catg_hits = [(c, p) for c, *_, p in (cg + cd) if abs(p) > 4]
-            catg_str = ("  (" + "  ".join(f"{c} {fp(p)}" for c, p in catg_hits[:2]) + ")"
-                        if catg_hits else "")
-            parts.append(f"{dept_name} {fp(dept_pct)}{catg_str}")
-        return " · ".join(parts)
+            if catg_hits:
+                catg_str = "  (" + "  ".join(f"{c} {fp(p)}" for c, p in catg_hits[:2]) + ")"
+        return f"{dept_name} {fp(yoy_p)} YoY{wow_part}{catg_str}"
 
-    gs_str = _fmt_with_catg(yoy_g)
-    ds_str = _fmt_with_catg(yoy_d)
-    if sbu_yoy_raw < 0 and ds_str:
-        yoy_str = f"▼ {ds_str}" + (f"  ▲ {gs_str} partially offsetting" if gs_str else "")
-    elif gs_str and ds_str:
-        yoy_str = f"▲ {gs_str}  ▼ {ds_str}"
-    elif gs_str:
-        yoy_str = f"▲ {gs_str}"
-    elif ds_str:
-        yoy_str = f"▼ {ds_str}"
+    def _fmt_wow_dept_full(dept_name, wow_p):
+        """Format: DEPT +X% WoW / +Y% YoY  (CAT1 +Z%)"""
+        d_ty  = dept_ty.get((sbu_name, dept_name), {}).get('store', 0)
+        d_ly  = dept_ly.get((sbu_name, dept_name), {}).get('store', 0)
+        yoy_p = pct(d_ty, d_ly) if d_ly else 0
+        yoy_part = f" / {fp(yoy_p)} YoY" if abs(yoy_p) > 0.5 else ""
+        cg, cd = _top_catg_in_dept(DC_CATG_TY, DC_CATG_LY, sbu_name, dept_name,
+                                    n_g=2, n_d=2, min_u=80_000, thr=4.0)
+        catg_hits = [(c, p) for c, *_, p in (cg + cd) if abs(p) > 4]
+        catg_str = ("  (" + "  ".join(f"{c} {fp(p)}" for c, p in catg_hits[:2]) + ")"
+                    if catg_hits else "")
+        return f"{dept_name} {fp(wow_p)} WoW{yoy_part}{catg_str}"
+
+    # YoY dept gainers/decliners with WoW + categories
+    gs = " · ".join(_fmt_dept_full(x[0], x[4]) for x in yoy_g)
+    ds = " · ".join(_fmt_dept_full(x[0], x[4]) for x in yoy_d)
+    if sbu_yoy_raw < 0 and ds:
+        yoy_str = f"▼ {ds}" + (f"  ▲ {gs} partially offsetting" if gs else "")
+    elif gs and ds:
+        yoy_str = f"▲ {gs}  ▼ {ds}"
+    elif gs:
+        yoy_str = f"▲ {gs}"
+    elif ds:
+        yoy_str = f"▼ {ds}"
     else:
         yoy_str = ""
 
     txt = f"{header}: {yoy_str}." if yoy_str else f"{header}."
 
-    # WoW dept breakdown (separate clause, always show direction)
+    # WoW dept movers with YoY + categories
     if wow_g or wow_d:
-        txt += f"  WoW: {_fmt_movers(wow_g, wow_d)}."
+        wow_parts = []
+        if wow_g:
+            wow_parts.append("▲ " + " · ".join(_fmt_wow_dept_full(x[0], x[4]) for x in wow_g))
+        if wow_d:
+            wow_parts.append("▼ " + " · ".join(_fmt_wow_dept_full(x[0], x[4]) for x in wow_d))
+        txt += f"  WoW: {('  '.join(wow_parts))}."
     return txt
 
 # ── Pre-compute top movers for page 1 callouts ────────────────────────────────
