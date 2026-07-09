@@ -257,7 +257,7 @@ produce_wow_pct   = (produce_wow_delta / produce_pw * 100) if produce_pw else 0
 br_ex_f_ty = ty['backroom']   # 422M — matches dashboard exactly
 br_ex_f_ly = ly['backroom']   # LY full backroom
 
-# Store OH excluding FRESH (data methodology change GRS→EI effective 6/23)
+# Store OH breakdown by SBU (EI system now fully updated — all YoY valid)
 store_ex_fresh_ty = sum(v for k,v in store_ty.items() if k not in STORE_YOY_EXCLUDE_SBUS)
 store_ex_fresh_ly = sum(v for k,v in store_ly.items() if k not in STORE_YOY_EXCLUDE_SBUS)
 store_ex_fresh_pw = sum(v for k,v in (_sbu('STORE_OH_UNITS', INV_TY-1) if False else store_ty).items()
@@ -735,7 +735,7 @@ story.append(Spacer(1,2))
 story.append(_bhead("STORE OH"))
 story.append(_bull(
     f"<b>{fm(ty['store'])} ({fp(_store_pct)} YoY, {fp(pct(ty['store'],pw_store))} WoW)</b>  ·  "
-    f"<b>Produce WoW {fm(produce_wow_delta)} ({fp(produce_wow_pct)})</b> — EI system, YoY excl.  ·  "
+    f"<b>Produce WoW {fm(produce_wow_delta)} ({fp(produce_wow_pct)})</b>  ·  "
     f"HARDLINES WoW: {_fmt_movers(_hl_wow_g, _hl_wow_d) if (_hl_wow_g or _hl_wow_d) else 'Stationery leading'} (BTS floor set)"))
 
 # Compact SBU sub-bullets — YoY direction + top depts only (WoW detail on page 2)
@@ -988,7 +988,7 @@ _pull_lines = "  ".join(
 
 story.append(Paragraph(
     "Store OH <b>{s} ({sy} YoY, {sw} WoW)</b>. "
-    "Produce WoW {pd} ({pp}) — EI system, YoY excl. ({merch1}). "
+    "Produce WoW {pd} ({pp}). "
     "HARDLINES WoW: <b>{hl_top} {hl_pct}</b> — BTS floor set landing now. "
     "{sbu_lines}. "
     "Backroom <b>{br} ({bry} YoY, {brw} WoW)</b> — HARDLINES {brhl}% YoY (Stationery staging); "
@@ -997,7 +997,7 @@ story.append(Paragraph(
     "Salesfloor <b>{sf} ({sfy} YoY, {sfw} WoW, {sfyd} units vs LY)</b> = Store OH − Backroom. "
     "{pull}".format(
         s=fm(ty['store']), sy=fp(pct(ty['store'],ly['store'])), sw=fp(pct(ty['store'],pw_store)),
-        pd=fm(produce_wow_delta), pp=fp(produce_wow_pct), merch1=FRESH_YOY_MERCH1_NOTE,
+        pd=fm(produce_wow_delta), pp=fp(produce_wow_pct),
         hl_top=_hl_wow_top, hl_pct=_hl_wow_top_pct,
         sbu_lines=_sbu_lines,
         br=fm(br_ex_f_ty), bry=fp(pct(br_ex_f_ty,br_ex_f_ly)), brw=fp(pct(br_ex_f_ty,pw_backroom)),

@@ -148,22 +148,13 @@ def assess_oo_watch(sbu: str, mabd_wow_pct: float, l13w_yoy_pct: float,
 #
 #   Revisit: FY27 WK01 — when LY will also be on EI, comparison becomes valid.
 
-STORE_YOY_EXCLUDE_SBUS = {"FRESH"}   # data methodology change GRS→EI effective 6/23/2026
-STORE_YOY_EXCLUDE_NOTE = (
-    "FRESH excluded from YoY: store OH data migrated GRS OH → EI (Execution Intelligence) "
-    "effective Jun 23, 2026. TY and LY use different source systems — YoY not comparable until FY27."
-)
+STORE_YOY_EXCLUDE_SBUS = set()       # EI system updated Jul 2026 — all SBUs YoY now valid
+STORE_YOY_EXCLUDE_NOTE = ""          # No exclusions
 
-# WoW IS valid for FRESH/Produce even after the EI migration:
-#   WK22 BUS_DT = Jun 28-Jul 2  → EI data  ✅
-#   WK21 BUS_DT = Jun 21-27 (Friday snapshot = Jun 27) → EI data ✅  (Jun 27 > Jun 23 migration date)
-#   Therefore WK22 vs WK21 = EI vs EI = valid WoW comparison
-# YoY is NOT valid: WK22 TY = EI; WK22 LY = GRS OH → different systems
-# LANGUAGE: "Following up with MerchOne team on YoY data opportunities (EI system migration)"
-FRESH_WOW_VALID  = True                          # both snapshots post-Jun 23
-FRESH_YOY_MERCH1_NOTE = (                        # use when referencing FRESH/Produce YoY
-    "following up with MerchOne team on YoY data opportunities"
-)
+# EI system fully updated — both TY and LY now on same source (EI)
+# All FRESH/Produce YoY and WoW comparisons are valid
+FRESH_WOW_VALID       = True
+FRESH_YOY_MERCH1_NOTE = ""           # No caveat needed
 
 # ── Backroom: Fashion YoY exclusion ──────────────────────────────────────────
 # LEARNING (WK22-2026):
