@@ -1250,7 +1250,11 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
                         changes += 1
 
             # Insights bullets — slide 1 only
+            # Colors set as absolute RGB so they survive copy-paste to other decks.
+            # bg2+lumMod50% = #E8E8E8 * 0.5 = #747474 (grey) — prevents theme remapping to orange.
             elif slide_idx == 0 and shape.name in INSIGHTS_MAP and shape.has_text_frame:
+                from pptx.dml.color import RGBColor
+                _GREY  = RGBColor(0x74, 0x74, 0x74)  # bg2 × lumMod50% = #747474
                 bullets = INSIGHTS_MAP[shape.name]
                 paras = shape.text_frame.paragraphs
                 para_idx = 0
@@ -1260,10 +1264,13 @@ def _update_slide1(prs, inv: pd.DataFrame, oo: pd.DataFrame, cur_oo_wk: int):
                     runs = para.runs
                     if len(runs) >= 2:
                         runs[0].text = head
+                        runs[0].font.color.rgb = _GREY   # lock absolute color
                         runs[1].text = body
+                        runs[1].font.color.rgb = _GREY
                         for r in runs[2:]: r.text = ""
                     elif len(runs) == 1:
                         runs[0].text = head + body
+                        runs[0].font.color.rgb = _GREY
                     changes += 1
                     para_idx += 1
 
