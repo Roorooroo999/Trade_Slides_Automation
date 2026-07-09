@@ -766,8 +766,6 @@ story.append(Table([[
 ]], colWidths=[4.0*inch,3.3*inch]))
 story.append(HRFlowable(width="100%",thickness=2,color=WM_YEL,spaceAfter=6))
 
-# Event timeline — colorful bar chart (same as Appendix A1, shown here for context)
-story.append(event_timeline())
 story.append(HRFlowable(width="100%",thickness=0.5,color=colors.HexColor("#ddd"),spaceAfter=4))
 
 # Compact body style for page 2 — fits more content without losing readability
@@ -989,8 +987,6 @@ story += app_sec("A1 · ACTIVE EVENTS TIMELINE")
 story.append(Paragraph(
     "Three overlapping events are in-season simultaneously with BTX beginning WK23. "
     "The timeline below shows why every supply chain signal this week reflects BTS staging.", BODY))
-story.append(Spacer(1,4))
-story.append(event_timeline())
 story.append(Spacer(1,10))
 
 # ── helper: build SBU rows with YoY + WoW ─────────────────────────────────────
