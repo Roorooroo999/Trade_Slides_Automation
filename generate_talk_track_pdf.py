@@ -479,13 +479,6 @@ story.append(Table([[
 ]], colWidths=[4.6*inch,3.0*inch]))
 story.append(HRFlowable(width="100%",thickness=2,color=WM_YEL,spaceAfter=3))
 
-# Event strip
-story.append(Table([[
-    Paragraph("<b>A250 ends this week</b>", ParagraphStyle("ev2",fontSize=7.5,fontName="Helvetica",textColor=colors.HexColor("#e31837"),alignment=TA_CENTER)),
-    Paragraph("<b>Summer ends Jul 6</b>", ParagraphStyle("ev2",fontSize=7.5,fontName="Helvetica",textColor=colors.HexColor("#d97706"),alignment=TA_CENTER)),
-    Paragraph("<b>World Cup</b> — 25% through", ParagraphStyle("ev2",fontSize=7.5,fontName="Helvetica",textColor=WM_GREEN,alignment=TA_CENTER)),
-    Paragraph("<b>BTX WK23–32 starts NEXT WEEK</b>", ParagraphStyle("ev2",fontSize=7.5,fontName="Helvetica-Bold",textColor=WM_BLUE,alignment=TA_CENTER)),
-]], colWidths=[1.7*inch,1.65*inch,1.85*inch,2.4*inch]))
 story.append(HRFlowable(width="100%",thickness=0.5,color=colors.HexColor("#ddd"),spaceAfter=4))
 
 # ── Callout helpers ───────────────────────────────────────────────────────────
