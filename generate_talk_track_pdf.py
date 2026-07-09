@@ -761,33 +761,6 @@ story.append(_sub(_p1_sbu('ETS',         store_ty, store_ly, store_pw, _ets_g,  
 story.append(_sub(_p1_sbu('HOME',        store_ty, store_ly, store_pw, _home_g, _home_d)))
 story.append(_sub(_p1_sbu('CAC',         store_ty, store_ly, store_pw, _cac_g,  _cac_d)))
 
-# Cross-node signals — all actionable patterns, compact one-liners
-_dot_lines = []
-# Pattern A: salesfloor declining + backroom building = pull opportunity
-for sbu_name, cross_list in [('CONSUMABLES', _cross_cons), ('PANTRY', _cross_pantry),
-                              ('CAC', _cross_cac), ('ETS', _cross_ets), ('HOME', _cross_home)]:
-    for d, sp, bp in cross_list:
-        _dot_lines.append(
-            f"[Pull Opp] <b>{sbu_name} — {d}</b>: salesfloor {fp(sp)} / backroom {fp(bp)} YoY "
-            f"— <b>product staged, can pull to salesfloor</b>.")
-# Pattern B: store declining + OO building = incoming pipeline
-for sbu_name in ['PANTRY','CAC','CONSUMABLES','HOME','ETS']:
-    st_y, oo_y, _ = _oo_store_signal(sbu_name)
-    if st_y < -1.0 and oo_y > 5.0:
-        _dot_lines.append(
-            f"[OO Incoming] <b>{sbu_name}</b>: store {fp(st_y)} YoY but OO {fp(oo_y)} vs LY "
-            f"— incoming pipeline expected to lift WK{TRADE_WK}+.")
-# Pattern C: store declining + backroom building = execution pull opportunity
-for sbu_name in ['PANTRY','CAC','CONSUMABLES']:
-    st_y, _, br_y = _oo_store_signal(sbu_name)
-    if st_y < -1.0 and br_y > 5.0 and not any(sbu_name in l for l in _dot_lines if '[OO' in l):
-        _dot_lines.append(
-            f"[Exec Pull] <b>{sbu_name}</b>: store {fp(st_y)} while backroom {fp(br_y)} YoY "
-            f"— inventory exists, execution pull opportunity.")
-if _dot_lines:
-    story.append(_sub("<b>Cross-node signals (backroom to salesfloor pull opportunities):</b>"))
-    for line in _dot_lines:
-        story.append(_sub(f"  {line}"))
 story.append(Spacer(1,2))
 
 story.append(_bhead("BACKROOM & SALESFLOOR"))
@@ -979,12 +952,7 @@ _sbu_lines = "  ".join([
     _p2_sbu('HOME',        _home_g, _home_d),
     _p2_sbu('CAC',         _cac_g,  _cac_d),
 ])
-_pull_lines = "  ".join(
-    f"{sbu} {d}: SF {fp(sp)} / BR {fp(bp)} — can pull to salesfloor."
-    for sbu, cl in [('CONSUMABLES',_cross_cons),('PANTRY',_cross_pantry),
-                    ('CAC',_cross_cac),('ETS',_cross_ets),('HOME',_cross_home)]
-    for d,sp,bp in cl
-) if any([_cross_cons,_cross_pantry,_cross_cac,_cross_ets,_cross_home]) else ""
+_pull_lines = ""  # Pull opp signals removed per user request
 
 story.append(Paragraph(
     "Store OH <b>{s} ({sy} YoY, {sw} WoW)</b>. "
