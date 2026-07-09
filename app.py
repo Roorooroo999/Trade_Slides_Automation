@@ -804,9 +804,7 @@ def update_cards(sbu, dept, _data):
         ],
         accent = "#4a90d9",
     )
-    # Backroom: show full total including Fashion
-    # YoY shown in card but note in talk track that Fashion inflates YoY (new FY26 tracking)
-    # WoW is valid for all SBUs including Fashion (Fashion WAS in backroom last week)
+    # Backroom: full total including Fashion — EI system updated, all YoY comparisons valid
     br_total_ty  = _s(inv, "backroom_units")
     br_total_ly  = _s(inv, "ly_backroom")
     br_total_wow = _wpct(inv, "backroom_units", "pw_backroom")

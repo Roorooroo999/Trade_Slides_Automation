@@ -730,7 +730,7 @@ story.append(_bull(
 _br_line = f"SBU: {_fmt_movers(_br_g, _br_d)}"
 if _br_dept_g or _br_dept_d:
     _br_line += f"  |  Key depts: {_fmt_movers(_br_dept_g[:2], _br_dept_d[:1])}"
-_br_line += f".  Fashion YoY ({fp(pct(br_ty.get('FASHION',0),br_ly.get('FASHION',0)))}) excluded (new tracking; WoW valid)."
+_br_line += f".  Fashion {fp(pct(br_ty.get('FASHION',0),br_ly.get('FASHION',0)))} YoY."
 story.append(_sub(_br_line))
 story.append(Spacer(1,2))
 
@@ -920,7 +920,7 @@ story.append(Paragraph(
     "{sbu_lines}. "
     "Backroom <b>{br} ({bry} YoY, {brw} WoW)</b> — HARDLINES {brhl}% YoY (Stationery staging); "
     "CONSUMABLES +{brco}% / CAC +{brca}% = replenishment, not BTS staging. "
-    "Fashion YoY ({fy}) not used (new tracking; WoW valid). "
+    "Fashion backroom {fy} YoY. "
     "Salesfloor <b>{sf} ({sfy} YoY, {sfw} WoW, {sfyd} units vs LY)</b> = Store OH − Backroom. "
     "{pull}".format(
         s=fm(ty['store']), sy=fp(pct(ty['store'],ly['store'])), sw=fp(pct(ty['store'],pw_store)),
@@ -1089,11 +1089,6 @@ story.append(sbu_tbl(HDR8,
     sbu_rows_wow(br_ty, br_ly, br_pw,
                  sort_key=lambda s:-br_ty.get(s,0)),
     up_cols=[3,4,6,7], wow_sep_col=5, col_w=CW8))
-story.append(Paragraph(
-    f"Fashion YoY ({fp(pct(br_ty.get('FASHION',0),br_ly.get('FASHION',0)))}) is inflated — "
-    f"backroom tracking added end of LY, so LY baseline is partial-year. "
-    f"Fashion WoW is valid (Fashion WAS in backroom last week).",
-    ParagraphStyle("fn2",fontSize=7.5,fontName="Helvetica-Oblique",textColor=colors.HexColor("#666"),spaceAfter=4)))
 
 # Appendix footer
 story.append(Spacer(1,6))
