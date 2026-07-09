@@ -304,7 +304,7 @@ for s in ['FRESH','PANTRY','CAC','CONSUMABLES','HARDLINES','HOME','FASHION','ETS
     if result['flag']:
         oo_flags[s] = result
 
-fresh_store_yoy    = None   # excluded: GRS→EI migration
+fresh_store_yoy    = pct(store_ty.get('FRESH',0), store_ly.get('FRESH',0))   # EI updated — YoY now valid
 fresh_replen_covered = True
 dc_concerns = {s: pct(dc_ty.get(s,0),dc_ly.get(s,0)) for s in dc_ty
                if pct(dc_ty.get(s,0),dc_ly.get(s,0)) < WATCH_THRESHOLDS['dc_yoy_decline_flag']
@@ -1121,8 +1121,8 @@ story.append(sbu_tbl(HDR8,
     up_cols=[3,4,6,7], wow_sep_col=5, col_w=CW8))
 story.append(Spacer(1,8))
 
-# A7 — Store OH with WoW (all SBUs — FRESH shown in data but no YoY interpretation)
-story += app_sec("A7 · STORE OH BY SBU  ·  *FRESH YoY: data methodology change GRS→EI effective Jun 23 — not comparable")
+# A7 — Store OH with WoW — all SBUs, all YoY now valid (EI updated)
+story += app_sec("A7 · STORE OH BY SBU  ·  All YoY comparisons valid — EI system fully updated Jul 2026")
 story.append(sbu_tbl(HDR8,
     sbu_rows_wow(store_ty, store_ly, store_pw,
                  sort_key=lambda s:dlt(store_ty.get(s,0),store_ly.get(s,0))),
@@ -1130,11 +1130,20 @@ story.append(sbu_tbl(HDR8,
 story.append(Spacer(1,8))
 
 # A8 — Backroom with WoW — ALL SBUs including Fashion
-story += app_sec("A8 · BACKROOM BY SBU  ·  WoW valid for all SBUs · YoY: Fashion inflated (new FY26 tracking)")
+_fashion_br_yoy = pct(br_ty.get('FASHION',0), br_ly.get('FASHION',0))
+story += app_sec("A8 · BACKROOM BY SBU  ·  All SBUs incl. Fashion  ·  All YoY valid (EI updated)")
 story.append(sbu_tbl(HDR8,
     sbu_rows_wow(br_ty, br_ly, br_pw,
                  sort_key=lambda s:-br_ty.get(s,0)),
     up_cols=[3,4,6,7], wow_sep_col=5, col_w=CW8))
+_SMALL_NOTE = ParagraphStyle("sn",fontSize=7,fontName="Helvetica-Oblique",
+    textColor=colors.HexColor("#666"),spaceAfter=3,leftIndent=4)
+story.append(Paragraph(
+    f"* FASHION backroom YoY is {fp(_fashion_br_yoy)} — "
+    f"reflects EI system now fully tracking Fashion backroom (previously excluded from LY baseline). "
+    f"Fashion WoW remains the most reliable week-over-week signal. "
+    f"All other SBU YoY comparisons are on consistent EI methodology.",
+    _SMALL_NOTE))
 
 # Appendix footer
 story.append(Spacer(1,6))
