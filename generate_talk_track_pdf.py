@@ -174,10 +174,31 @@ def _dept_all(wk):
                   'it_store': float(r['it_store'] or 0), 'backroom': float(r['backroom'] or 0)}
     return out
 
+def _dept_catg_all(wk):
+    """Store at (SBU, dept, catg) level — used for category drivers. Uses distinct name to avoid shadowing."""
+    q = f"""WITH s AS (
+      SELECT SBU,OMNI_DEPT_NBR,OMNI_CATG_NBR,MAX(BUS_DT) dt
+      FROM `wmt-execution-intel-prod.WM_AD_HOC.R0C0JUG_WMUS_HIST_COMBINED`
+      WHERE WM_YR_WK_NBR={wk} GROUP BY 1,2,3)
+    SELECT c.SBU sbu, c.OMNI_DEPT_DESC dept, c.OMNI_CATG_DESC catg,
+      CAST(SUM(c.STORE_OH_UNITS) AS FLOAT64) store_u
+    FROM `wmt-execution-intel-prod.WM_AD_HOC.R0C0JUG_WMUS_HIST_COMBINED` c
+    INNER JOIN s ON c.OMNI_CATG_NBR=s.OMNI_CATG_NBR AND c.BUS_DT=s.dt
+    WHERE c.SBU!='OTHER'
+    GROUP BY 1,2,3"""
+    result = {}
+    for r in bq(q):
+        result[(r['sbu'], r['dept'], r['catg'])] = float(r['store_u'] or 0)
+    return result
+
 print("Pulling dept-level breakdowns (TY / LY / PW)...")
 dept_ty = _dept_all(INV_TY)
 dept_ly = _dept_all(INV_LY)
 dept_pw = _dept_all(INV_TY - 1)
+
+# Category-level data — stored under dc_ty/dc_ly prefix to avoid any variable shadowing
+DC_CATG_TY = _dept_catg_all(INV_TY)
+DC_CATG_LY = _dept_catg_all(INV_LY)
 
 # On-Order by SBU
 oo_ty_s =_sbu(None,OO_TY,'OO'); oo_ly_s=_sbu(None,OO_LY,'OO'); oo_pw_s=_sbu(None,OO_PW,'OO')
@@ -495,6 +516,35 @@ def _top_dept(node, ty_d, ly_d, sbu=None, n_g=3, n_d=3, min_u=500_000, thr=3.0, 
     d = sorted([x for x in items if x[4] < -_d],  key=lambda x:  x[3])[:n_d]
     return g, d
 
+def _top_catg_in_dept(DC_CATG_TY_d, DC_CATG_LY_d, sbu, dept_name,
+                      n_g=2, n_d=2, min_u=200_000, thr=5.0):
+    """Top store OH categories within a dept driving its YoY move.
+    DC_CATG_TY_d / DC_CATG_LY_d: dict (sbu, dept, catg) → store_units float
+    Returns (gainers, decliners) — each: (catg_name, t, l, delta, yoy_pct)."""
+    items = []
+    for (s, dept, catg), t_val in DC_CATG_TY_d.items():
+        if s != sbu or dept != dept_name: continue
+        l_val = DC_CATG_LY_d.get((s, dept, catg), 0)
+        if max(t_val, l_val) < min_u: continue
+        items.append((catg, t_val, l_val, t_val - l_val, pct(t_val, l_val)))
+    g = sorted([x for x in items if x[4] >  thr], key=lambda x: -x[3])[:n_g]
+    d = sorted([x for x in items if x[4] < -thr], key=lambda x:  x[3])[:n_d]
+    return g, d
+
+def _fmt_dept_with_catg(dept_items, DC_CATG_TY_d, DC_CATG_LY_d, sbu, n_catg=2):
+    """Format dept mover with top store OH category drivers.
+    e.g. 'PERSONAL CARE +8.4%  (VITAMINS +12.1%  SKIN CARE +6.8%)'"""
+    parts = []
+    for dept_row in dept_items:
+        dept_name = dept_row[0]; dept_pct = dept_row[4]
+        cg, cd = _top_catg_in_dept(DC_CATG_TY_d, DC_CATG_LY_d, sbu, dept_name,
+                                    n_g=n_catg, n_d=n_catg, min_u=100_000, thr=3.0)
+        catg_hits = [(c, p) for c, *_, p in (cg + cd) if abs(p) > 3]
+        catg_str = ("  (" + "  ".join(f"{c} {fp(p)}" for c, p in catg_hits[:n_catg]) + ")"
+                    if catg_hits else "")
+        parts.append(f"{dept_name} {fp(dept_pct)}{catg_str}")
+    return "  ·  ".join(parts)
+
 def _cross_node_sf_br(ty_d, ly_d, sbu=None, n=3, min_u=100_000, sf_thr=-2.0, br_thr=2.0):
     """Find depts where salesfloor is declining YoY but backroom is building.
     Pattern: product staged in back, not reaching the floor → pull opportunity.
@@ -545,17 +595,30 @@ def _sbu_sub(sbu_name, ty_sbu, ly_sbu, pw_sbu,
     sbu_wow_raw = pct(ty_sbu.get(sbu_name,0), pw_sbu.get(sbu_name,0))
     header = f"<b>{sbu_name} {fp(sbu_yoy_raw)} YoY, {fp(sbu_wow_raw)} WoW</b>"
 
-    # Direction-aware YoY dept callout
-    gs = " · ".join(f"{x[0]} {fp(x[4])}" for x in yoy_g)
-    ds = " · ".join(f"{x[0]} {fp(x[4])}" for x in yoy_d)
-    if sbu_yoy_raw < 0 and ds:
-        yoy_str = f"▼ {ds}" + (f"  ▲ {gs} partially offsetting" if gs else "")
-    elif gs and ds:
-        yoy_str = f"▲ {gs}  ▼ {ds}"
-    elif gs:
-        yoy_str = f"▲ {gs}"
-    elif ds:
-        yoy_str = f"▼ {ds}"
+    # Direction-aware YoY dept callout — with top categories per dept
+    def _fmt_with_catg(items):
+        parts = []
+        for x in items:
+            dept_name = x[0]; dept_pct = x[4]
+            # Get top 2 categories within this dept/SBU
+            cg, cd = _top_catg_in_dept(DC_CATG_TY, DC_CATG_LY, sbu_name, dept_name,
+                                        n_g=2, n_d=2, min_u=80_000, thr=4.0)
+            catg_hits = [(c, p) for c, *_, p in (cg + cd) if abs(p) > 4]
+            catg_str = ("  (" + "  ".join(f"{c} {fp(p)}" for c, p in catg_hits[:2]) + ")"
+                        if catg_hits else "")
+            parts.append(f"{dept_name} {fp(dept_pct)}{catg_str}")
+        return " · ".join(parts)
+
+    gs_str = _fmt_with_catg(yoy_g)
+    ds_str = _fmt_with_catg(yoy_d)
+    if sbu_yoy_raw < 0 and ds_str:
+        yoy_str = f"▼ {ds_str}" + (f"  ▲ {gs_str} partially offsetting" if gs_str else "")
+    elif gs_str and ds_str:
+        yoy_str = f"▲ {gs_str}  ▼ {ds_str}"
+    elif gs_str:
+        yoy_str = f"▲ {gs_str}"
+    elif ds_str:
+        yoy_str = f"▼ {ds_str}"
     else:
         yoy_str = ""
 
@@ -590,13 +653,17 @@ _cac_yoy_raw  = pct(store_ty.get('CAC',0),         store_ly.get('CAC',0))
 _cons_g, _cons_d = _top_dept('store', dept_ty, dept_ly, sbu='CONSUMABLES', n_g=3, n_d=2, min_u=200_000,
                               thr=2.0, d_thr=0.5 if _cons_yoy_raw < 0 else 2.0)
 _pan_g,  _pan_d  = _top_dept('store', dept_ty, dept_ly, sbu='PANTRY',      n_g=2, n_d=3, min_u=200_000,
-                              thr=1.5, d_thr=0.3)   # always show decliners — PANTRY total often < 0
+                              thr=1.5, d_thr=0.3)
 _ets_g,  _ets_d  = _top_dept('store', dept_ty, dept_ly, sbu='ETS',         n_g=3, n_d=3, min_u=200_000,
                               thr=3.0, d_thr=0.5 if _ets_yoy_raw < 0 else 3.0)
 _home_g, _home_d = _top_dept('store', dept_ty, dept_ly, sbu='HOME',        n_g=2, n_d=3, min_u=200_000,
                               thr=3.0, d_thr=0.5 if _home_yoy_raw < 0 else 3.0)
 _cac_g,  _cac_d  = _top_dept('store', dept_ty, dept_ly, sbu='CAC',         n_g=2, n_d=2, min_u=200_000,
-                              thr=2.0, d_thr=0.3)   # always show decliners — CAC total often < 0
+                              thr=2.0, d_thr=0.3)
+
+def _dept_catg_line(dept_items, sbu, n_catg=2):
+    """Format: DEPT_NAME +X%  (CAT1 +Y%  CAT2 +Z%)  ·  DEPT2 ..."""
+    return _fmt_dept_with_catg(dept_items, DC_CATG_TY, DC_CATG_LY, sbu, n_catg=n_catg)
 _hl_wow_g,   _hl_wow_d   = _top_dept_wow('store', dept_ty, dept_pw, sbu='HARDLINES',  n_g=3, n_d=2, min_u=200_000, thr=10.0)
 _ets_wow_g,  _ets_wow_d  = _top_dept_wow('store', dept_ty, dept_pw, sbu='ETS',        n_g=2, n_d=2, min_u=200_000, thr=5.0)
 _cons_wow_g, _cons_wow_d = _top_dept_wow('store', dept_ty, dept_pw, sbu='CONSUMABLES',n_g=2, n_d=2, min_u=200_000, thr=3.0)
@@ -734,16 +801,22 @@ _br_line += f".  Fashion {fp(pct(br_ty.get('FASHION',0),br_ly.get('FASHION',0)))
 story.append(_sub(_br_line))
 story.append(Spacer(1,2))
 
-story.append(_bhead("WATCH ITEMS"))
-# On-order flags
-for sbu, result in oo_flags.items():
-    icon = "[CONCERN]" if result['level']=='concern' else "[WATCH]"
-    story.append(_sub(f"{icon} {sbu} On-Order: {result['reason']}"))
-story.append(_sub(
-    f"[OK] BTX WK23 readiness: DC depleting {fp(_dc_pct)} YoY, IT→Store +{fp(_it_pct)} YoY, "
-    "Stationery staged. Pipeline confirmed ready."))
-if not oo_flags:
-    story.append(_sub("No elevated on-order watch items — MABD shifts confirmed via in-store date."))
+story.append(_bhead("INSTOCK  (WMS · as of this week)"))
+# ── Static instock from WMS weekly snapshot — update from WMS instock report ──
+_is_data = [
+    # (SBU,          ty_pct, vs_lw_bps, vs_ly_bps)
+    ("Walmart Total", 93.14,  -130,  -79),
+    ("Consumables",   95.43,   -65,  -93),
+    ("Food",          97.13,   -67,  -12),
+    ("Pantry",        96.38,   -72,  -57),
+    ("Fashion",       86.05,  -308, -134),
+    ("ETSHH",         94.31,   -74,  -27),
+    ("Home",          95.42,   -33,  +75),
+]
+for sbu, is_pct, lw_bps, ly_bps in _is_data:
+    lw_str = f"{lw_bps:+.0f} bps vs LW"
+    ly_str = f"{ly_bps:+.0f} bps vs LY"
+    story.append(_sub(f"<b>{sbu}:</b>  {is_pct:.2f}%  ·  {lw_str}  ·  {ly_str}"))
 
 story.append(Spacer(1,2))
 story.append(HRFlowable(width="100%",thickness=0.5,color=colors.HexColor("#ddd"),spaceAfter=1))
@@ -939,32 +1012,11 @@ story.append(Paragraph(
 # ── Watch items — auto-generated from business_rules.py (flags pre-computed above) ──
 fresh_it_yoy = pct(it_ty.get('FRESH',0), it_ly.get('FRESH',0))
 
-story += sec("WATCH ITEMS", color=WM_DARK)
-
-# On-order flags (auto-assessed)
-for sbu, result in oo_flags.items():
-    icon = "[CONCERN]" if result['level']=='concern' else "[WATCH]"
-    story.append(Paragraph(f"• {icon} <b>{sbu} On-Order:</b> {result['reason']}", BULL2))
-
-for s, yoy in sorted(dc_concerns.items(), key=lambda x:x[1]):
-    story.append(Paragraph(
-        f"• [WATCH] <b>{s} DC building unexpectedly</b> ({yoy:+.1f}% YoY): confirm allocation/flow strategy.",
-        BULL2))
-
-story.append(Paragraph(
-    f"• [OK] <b>BTX WK23 readiness:</b> DC depleting ({fp(pct(ty['dc'],ly['dc']))} YoY), "
-    f"IT→Store surging (+{fp(pct(ty['it_store'],ly['it_store']))} YoY), "
-    "FASHION backroom staged. Store OH expected to build materially WK23+.", BULL2))
-
-story.append(Paragraph(
-    f"• <b>World Cup (25% through, ends Jul 19):</b> "
-    f"ETS IT→Store +{pct(it_ty.get('ETS',0),it_ly.get('ETS',0)):.1f}% YoY. Monitor sell-through.", BULL2))
-
-if not oo_flags and not dc_concerns and fresh_replen_covered:
-    story.append(Paragraph(
-        "  No elevated watch items — all signals within normal range after L13W and in-store date assessment.",
-        ParagraphStyle("ok2", fontSize=7.5, fontName="Helvetica-Oblique",
-            textColor=WM_GREEN, leftIndent=12, spaceAfter=3)))
+story += sec("INSTOCK  (WMS · as of this week)", color=WM_DARK)
+for sbu, is_pct, lw_bps, ly_bps in _is_data:
+    lw_str = f"{lw_bps:+.0f} bps vs LW"
+    ly_str = f"{ly_bps:+.0f} bps vs LY"
+    story.append(Paragraph(f"• <b>{sbu}:</b>  {is_pct:.2f}%  ·  {lw_str}  ·  {ly_str}", BULL2))
 
 # Footer
 story.append(Spacer(1,4))
