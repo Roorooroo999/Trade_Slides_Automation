@@ -756,11 +756,21 @@ story.append(_bull(
 
 # Compact SBU sub-bullets — YoY direction + top depts only (WoW detail on page 2)
 def _p1_sbu(sbu_name, ty_s, ly_s, pw_s, yoy_g, yoy_d):
-    """Page 1 compact SBU bullet: YoY % + top dept movers, no WoW detail."""
+    """Page 1 compact SBU bullet — each dept shows both YoY and WoW."""
     raw_yoy = pct(ty_s.get(sbu_name,0), ly_s.get(sbu_name,0))
     raw_wow = pct(ty_s.get(sbu_name,0), pw_s.get(sbu_name,0))
-    gs = " · ".join(f"{x[0]} {fp(x[4])}" for x in yoy_g[:2])
-    ds = " · ".join(f"{x[0]} {fp(x[4])}" for x in yoy_d[:2])
+
+    def _fmt_d(x):
+        """DEPT_NAME +X% YoY / +Y% WoW"""
+        dept_name = x[0]; yoy_p = x[4]
+        d_ty = dept_ty.get((sbu_name, dept_name), {}).get('store', 0)
+        d_pw = dept_pw.get((sbu_name, dept_name), {}).get('store', 0)
+        wow_p = pct(d_ty, d_pw) if d_pw else 0
+        wow_lbl = f" / {fp(wow_p)} WoW" if abs(wow_p) > 0.5 else ""
+        return f"{dept_name} {fp(yoy_p)} YoY{wow_lbl}"
+
+    gs = " · ".join(_fmt_d(x) for x in yoy_g[:2])
+    ds = " · ".join(_fmt_d(x) for x in yoy_d[:2])
     if raw_yoy < 0 and ds:
         dept = f"▼ {ds}" + (f"  ▲ {gs}" if gs else "")
     elif gs and ds:
