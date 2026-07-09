@@ -320,6 +320,19 @@ app.layout = dbc.Container(
             dbc.Col(html.Div(id="card-fc"),        width=2),
         ], className="g-2 mb-3"),
 
+        # ── BU Store Breakdown: On Floor + Backroom by Business Unit ────────────
+        dbc.Card([
+            dbc.CardBody([
+                html.Div([
+                    html.Strong("Store Inventory by Business Unit",
+                                style={"fontSize": "0.95rem"}),
+                    html.Span(" · On Floor & Backroom vs LY",
+                              style={"fontSize": "0.74rem", "color": "#999", "marginLeft": "6px"}),
+                ], className="mb-2"),
+                html.Div(id="bu-breakdown-table"),
+            ])
+        ], style={"borderRadius": "8px", "boxShadow": "0 1px 4px rgba(0,0,0,.10)", "marginBottom": "16px"}),
+
         # ── Detail table ─────────────────────────────────────────────────────
         # ── On-Order: MABD vs L4W vs In-Store comparison ─────────────────────
         dbc.Card([
@@ -843,6 +856,102 @@ def update_cards(sbu, dept, _data):
     ts = _cache["last_loaded"].strftime("Updated %b %d %H:%M UTC")
     return (banner, factory, yard, dc, it, store_card, fc,
             f"WK {cw}", f"WK {cw - 1}", ts)
+
+
+@app.callback(
+    Output("bu-breakdown-table", "children"),
+    Input("sbu-filter",  "value"),
+    Input("dept-filter", "value"),
+    Input("data-store",  "data"),
+)
+def update_bu_breakdown(sbu_filter, dept_filter, _data):
+    """On Floor + Backroom by Business Unit with vs LY comparison."""
+    inv, _ = _get_frames(sbu_filter, dept_filter)
+
+    # BU groupings
+    BU_MAP = {
+        "Food":        ["FRESH", "CAC", "PANTRY"],
+        "Consumables": ["CONSUMABLES"],
+        "ETSHH":       ["ETS", "HOME", "HARDLINES"],
+        "Fashion":     ["FASHION"],
+    }
+    BU_COLORS = {
+        "Food": "#1565c0", "Consumables": "#2e7d32",
+        "ETSHH": "#e65100", "Fashion": "#6a1b9a",
+    }
+
+    def _s(col): return float(inv[col].sum()) if col in inv.columns else 0.0
+    def _sbu_sum(col, sbus):
+        if col not in inv.columns: return 0.0
+        return float(inv[inv["sbu"].isin(sbus)][col].sum())
+
+    TH = {"background": "#f8f8f8", "fontWeight": "700", "padding": "8px 12px",
+          "borderBottom": "2px solid #e0e0e0", "textAlign": "right",
+          "fontSize": "0.78rem", "whiteSpace": "nowrap"}
+    THL = {**TH, "textAlign": "left"}
+    TD  = {"padding": "7px 12px", "borderBottom": "1px solid #f2f2f2", "fontSize": "0.82rem"}
+    TDR = {**TD, "textAlign": "right", "fontWeight": "500"}
+
+    def _pct_cell(ty, prior):
+        if prior == 0: return html.Td("—", style={**TD, "textAlign": "right", "color": "#bbb"})
+        v = (ty - prior) / prior * 100
+        c = WM_GREEN if v >= 0 else WM_RED
+        s = "+" if v >= 0 else ""
+        return html.Td(f"{s}{v:.1f}%", style={**TDR, "color": c, "fontWeight": "700"})
+
+    rows = [html.Tr([
+        html.Th("Business Unit", style=THL),
+        html.Th("On Floor",      style=TH),
+        html.Th("vs LY",         style=TH),
+        html.Th("Backroom",      style=TH),
+        html.Th("vs LY",         style=TH),
+        html.Th("Total Store OH",style=TH),
+        html.Th("vs LY",         style=TH),
+    ])]
+
+    # Total row
+    sf_ty = _s("store_oh_units") - _s("backroom_units")
+    sf_ly = _s("ly_store") - _s("ly_backroom")
+    br_ty = _s("backroom_units"); br_ly = _s("ly_backroom")
+    st_ty = _s("store_oh_units"); st_ly = _s("ly_store")
+    rows.append(html.Tr([
+        html.Td("ALL SBUs", style={**TD, "fontWeight": "800", "color": WM_DARK}),
+        html.Td(_fmt(sf_ty), style={**TDR, "fontWeight": "800"}),
+        _pct_cell(sf_ty, sf_ly),
+        html.Td(_fmt(br_ty), style={**TDR, "fontWeight": "800"}),
+        _pct_cell(br_ty, br_ly),
+        html.Td(_fmt(st_ty), style={**TDR, "fontWeight": "800"}),
+        _pct_cell(st_ty, st_ly),
+    ], style={"background": "#eef4ff"}))
+
+    for bu_name, sbu_list in BU_MAP.items():
+        sf_ty = _sbu_sum("store_oh_units", sbu_list) - _sbu_sum("backroom_units", sbu_list)
+        sf_ly = _sbu_sum("ly_store",       sbu_list) - _sbu_sum("ly_backroom",    sbu_list)
+        br_ty = _sbu_sum("backroom_units", sbu_list)
+        br_ly = _sbu_sum("ly_backroom",    sbu_list)
+        st_ty = _sbu_sum("store_oh_units", sbu_list)
+        st_ly = _sbu_sum("ly_store",       sbu_list)
+        color = BU_COLORS.get(bu_name, "#333")
+        sbu_label = f"{bu_name} ({' + '.join(sbu_list)})" if len(sbu_list) > 1 else bu_name
+        rows.append(html.Tr([
+            html.Td(html.Span([
+                html.Span("●", style={"color": color, "marginRight": "6px"}),
+                html.Strong(bu_name),
+                html.Span(f"  {' · '.join(sbu_list)}",
+                          style={"color": "#999", "fontSize": "0.72rem", "marginLeft": "4px"}),
+            ]), style=TD),
+            html.Td(_fmt(sf_ty), style=TDR),
+            _pct_cell(sf_ty, sf_ly),
+            html.Td(_fmt(br_ty), style=TDR),
+            _pct_cell(br_ty, br_ly),
+            html.Td(_fmt(st_ty), style=TDR),
+            _pct_cell(st_ty, st_ly),
+        ]))
+
+    return html.Div(
+        html.Table(rows, style={"width": "100%", "borderCollapse": "collapse"}),
+        style={"overflowX": "auto"},
+    )
 
 
 @app.callback(
